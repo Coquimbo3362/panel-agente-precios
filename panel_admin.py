@@ -77,7 +77,7 @@ with tab_ret:
         with st.form("form_retailer", clear_on_submit=True):
             col1, col2 = st.columns(2)
             nombre_ret = col1.text_input("Nombre (ej: Fravega)")
-            tipo_pag = col2.selectbox("Tipo Paginación",["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO"])
+            tipo_pag = col2.selectbox("Tipo Paginación",["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO", "ENLACE_SIGUIENTE"])
             sel_caja = col1.text_input("Selector Caja Producto (ej: .product-item)")
             sel_sig = col2.text_input("Selector Botón Siguiente (ej: a.next)")
             
@@ -102,7 +102,7 @@ with tab_ret:
                 st.info(f"Editando la configuración de: **{datos_ret['nombre']}**")
                 col1, col2 = st.columns(2)
                 nuevo_nombre = col1.text_input("Nombre", value=datos_ret['nombre'])
-                opciones_pag =["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO"]
+                opciones_pag =["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO", "ENLACE_SIGUIENTE"]
                 idx_pag = opciones_pag.index(datos_ret['tipo_paginacion']) if datos_ret['tipo_paginacion'] in opciones_pag else 0
                 nuevo_tipo_pag = col2.selectbox("Tipo Paginación", opciones_pag, index=idx_pag)
                 nuevo_sel_caja = col1.text_input("Selector Caja Producto", value=datos_ret['selector_caja'])
