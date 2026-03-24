@@ -26,7 +26,7 @@ supabase = create_client(supabase_url, supabase_key, options=opciones)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos():
-    # ¡TRUCO APLICADO! Agregamos .limit(100000) porque Supabase por defecto solo trae 1000 filas
+    # Traemos hasta 100,000 registros
     respuesta = supabase.table("historico_precios").select(
         "id, precio_lista, fecha_extraccion, marca_detectada, nombre_modelo_completo, retailers(nombre), categorias(nombre)"
     ).limit(100000).execute()
@@ -54,7 +54,7 @@ def cargar_datos():
 df_precios = cargar_datos()
 
 # ==========================================
-# 4. INTERFAZ: BARRA LATERAL (FILTROS EN CASCADA)
+# 4. INTERFAZ: BARRA LATERAL (FILTROS)
 # ==========================================
 st.sidebar.header("🔍 Filtros de Búsqueda")
 
@@ -69,11 +69,15 @@ if not df_precios.empty:
         max_value=hoy
     )
     
-    # B. FILTRO DE CATEGORÍA (¡Va primero!)
+    # B. FILTRO DE CATEGORÍA (Heladeras por default)
     categorias_unicas = sorted(df_precios['Categoría'].unique().tolist())
-    filtro_categoria = st.sidebar.multiselect("📁 Categoría", categorias_unicas, default=categorias_unicas)
     
-    # Filtramos temporalmente para que los siguientes menús solo muestren lo relevante (Filtro en Cascada)
+    # Lógica para que Heladeras sea el valor por defecto si existe en la base
+    cat_default = ["Heladeras"] if "Heladeras" in categorias_unicas else categorias_unicas
+    
+    filtro_categoria = st.sidebar.multiselect("📁 Categoría", categorias_unicas, default=cat_default)
+    
+    # Filtramos temporalmente para los menús en cascada
     df_temp_cat = df_precios[df_precios['Categoría'].isin(filtro_categoria)] if filtro_categoria else df_precios
     
     # C. FILTRO DE RETAILER
@@ -110,7 +114,7 @@ if not df_precios.empty:
     st.title("📊 Tablero de Control de Precios")
     
     if len(df_filtrado) > 0:
-        # Tarjetas de Resumen (KPIs)
+        # Tarjetas de Resumen
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Productos", len(df_filtrado))
         col2.metric("Precio Promedio", f"${int(df_filtrado['Precio'].mean()):,}")
@@ -118,15 +122,16 @@ if not df_precios.empty:
         
         st.write("---")
         
-        # OPCIÓN PARA EL GRÁFICO
-        mostrar_grafico = st.checkbox("📈 Mostrar gráfico comparativo de precio promedio", value=False)
-        
-        if mostrar_grafico:
-            st.subheader("Precio Promedio por Marca")
-            promedio_marcas = df_filtrado.groupby('Marca')['Precio'].mean().sort_values(ascending=False)
-            st.bar_chart(promedio_marcas)
-            st.write("---")
+        # OPCIÓN DE GRÁFICO (Solo si hay más de 1 marca en los filtros aplicados)
+        if df_filtrado['Marca'].nunique() > 1:
+            mostrar_grafico = st.checkbox("📈 Mostrar gráfico comparativo de precio promedio", value=False)
             
+            if mostrar_grafico:
+                st.subheader("Precio Promedio por Marca")
+                promedio_marcas = df_filtrado.groupby('Marca')['Precio'].mean().sort_values(ascending=False)
+                st.bar_chart(promedio_marcas)
+                st.write("---")
+                
         # TABLA DE DATOS
         st.subheader("Base de Datos Detallada")
         st.dataframe(
