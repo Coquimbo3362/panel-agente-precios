@@ -64,7 +64,11 @@ def cargar_datos():
         'nombre_modelo_completo': 'Modelo',
         'fecha_extraccion': 'Fecha'
     })
-    
+      # ==========================================
+    # EL TRUCO PARA UNIFICAR MARCAS AL VUELO
+    # ==========================================
+    df['Marca'] = df['Marca'].str.title()  
+
     return df[['Fecha', 'Categoría', 'Retailer', 'Marca', 'Modelo', 'Precio']]
 
 df_precios = cargar_datos()
