@@ -22,20 +22,36 @@ supabase_key = os.environ.get("SUPABASE_ANON_KEY") or st.secrets.get("SUPABASE_A
 supabase = create_client(supabase_url, supabase_key, options=opciones)
 
 # ==========================================
-# 3. OBTENER DATOS
+# 3. OBTENER DATOS (Con extracción por bloques para saltar el límite de 1000)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos():
-    # Traemos hasta 100,000 registros
-    respuesta = supabase.table("historico_precios").select(
-        "id, precio_lista, fecha_extraccion, marca_detectada, nombre_modelo_completo, retailers(nombre), categorias(nombre)"
-    ).limit(100000).execute()
+    todos_los_datos =[]
+    inicio = 0
+    tamano_bloque = 1000
     
-    datos = respuesta.data
-    if not datos:
+    # Bucle para descargar la base de datos completa en pedacitos
+    while True:
+        respuesta = supabase.table("historico_precios").select(
+            "id, precio_lista, fecha_extraccion, marca_detectada, nombre_modelo_completo, retailers(nombre), categorias(nombre)"
+        ).range(inicio, inicio + tamano_bloque - 1).execute()
+        
+        datos = respuesta.data
+        if not datos:
+            break # Si ya no hay datos, rompemos el bucle
+            
+        todos_los_datos.extend(datos) # Sumamos este bloque a la lista total
+        
+        # Si nos devolvió menos de 1000, significa que llegamos al final de la tabla
+        if len(datos) < tamano_bloque:
+            break
+            
+        inicio += tamano_bloque # Preparamos el inicio para los siguientes 1000
+        
+    if not todos_los_datos:
         return pd.DataFrame()
         
-    df = pd.DataFrame(datos)
+    df = pd.DataFrame(todos_los_datos)
     
     # Limpieza
     df['Retailer'] = df['retailers'].apply(lambda x: x['nombre'] if x else 'Desconocido')
