@@ -145,13 +145,17 @@ with tab_urls:
                 cat_seleccionada = st.selectbox("Seleccione la Categoría", options=list(dicc_cat.keys()))
                 ret_seleccionado = st.selectbox("Seleccione el Retailer", options=list(dicc_ret.keys()))
                 url_ingresada = st.text_input("Pegue la URL base aquí (use {page} si es necesario)")
-                
+                limite_ingresado = st.number_input("Límite de páginas (Deje en 0 para infinito)", min_value=0, step=1, value=0)
+
                 if st.form_submit_button("Guardar URL"):
                     if url_ingresada:
+                        valor_limite = int(limite_ingresado) if limite_ingresado > 0 else None
+
                         supabase.table("urls_extraccion").insert({
                             "categoria_id": dicc_cat[cat_seleccionada],
                             "retailer_id": dicc_ret[ret_seleccionado],
                             "url_base": url_ingresada,
+                            "max_paginas": valor_limite,
                             "activo": True
                         }).execute()
                         st.success("¡Ruta de navegación creada con éxito!")
