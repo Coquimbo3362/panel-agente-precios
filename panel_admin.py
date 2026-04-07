@@ -1,20 +1,30 @@
 import streamlit as st
+import pandas as pd
 import os
 from dotenv import load_dotenv
 from supabase import create_client, ClientOptions
 
 # ==========================================
-# 1. CONFIGURACIÓN INICIAL Y BASE DE DATOS
+# 1. CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
 st.set_page_config(page_title="Panel de Control - Agente de Precios", layout="wide")
 
+# ==========================================
+# 2. CONEXIÓN A BASE DE DATOS
+# ==========================================
 load_dotenv(override=True)
 opciones = ClientOptions(schema="agente_precios")
-supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_ANON_KEY"), options=opciones)
+
+# Soporta tanto ejecución local (.env) como en la nube de Streamlit (Secrets)
+supabase_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_ANON_KEY") or st.secrets.get("SUPABASE_ANON_KEY")
+
+supabase = create_client(supabase_url, supabase_key, options=opciones)
 
 st.title("⚙️ Backoffice - Agente de Precios")
 st.write("Administración de datos maestros para el Bot de Scraping.")
 
+# 3. PESTAÑAS (Tabs)
 tab_cat, tab_marcas, tab_ret, tab_urls = st.tabs(["📁 Categorías", "🏷️ Marcas", "🏢 Retailers", "🔗 URLs de Navegación"])
 
 # ==========================================
@@ -25,13 +35,25 @@ with tab_cat:
     categorias = supabase.table("categorias").select("*").order("id").execute().data
     st.dataframe(categorias, use_container_width=True)
     
-    with st.form("form_cat", clear_on_submit=True):
-        st.write("➕ Agregar Nueva Categoría")
-        nueva_cat = st.text_input("Nombre de la categoría (ej: Lavarropas)")
-        if st.form_submit_button("Guardar Categoría"):
-            if nueva_cat:
-                supabase.table("categorias").insert({"nombre": nueva_cat}).execute()
-                st.success("¡Categoría guardada!")
+    col_alta, col_baja = st.columns(2)
+    with col_alta:
+        with st.form("form_cat", clear_on_submit=True):
+            st.write("➕ **Agregar Nueva Categoría**")
+            nueva_cat = st.text_input("Nombre de la categoría (ej: Lavarropas)")
+            if st.form_submit_button("Guardar Categoría"):
+                if nueva_cat:
+                    supabase.table("categorias").insert({"nombre": nueva_cat}).execute()
+                    st.success("¡Categoría guardada!")
+                    st.rerun()
+                    
+    with col_baja:
+        st.write("🗑️ **Eliminar Categoría**")
+        if categorias:
+            dicc_cat_borrar = {f"ID: {c['id']} - {c['nombre']}": c['id'] for c in categorias}
+            cat_a_borrar = st.selectbox("Seleccione la categoría a eliminar:", options=list(dicc_cat_borrar.keys()))
+            if st.button("🚨 Borrar Categoría Seleccionada", type="primary"):
+                supabase.table("categorias").delete().eq("id", dicc_cat_borrar[cat_a_borrar]).execute()
+                st.success("¡Categoría eliminada!")
                 st.rerun()
 
 # ==========================================
@@ -58,7 +80,7 @@ with tab_marcas:
         if marcas:
             dicc_marcas_borrar = {f"ID: {m['id']} - {m['nombre']}": m['id'] for m in marcas}
             marca_a_borrar = st.selectbox("Seleccione la marca a eliminar:", options=list(dicc_marcas_borrar.keys()))
-            if st.button("🚨 Borrar Marca Seleccionada", type="primary"):
+            if st.button("🚨 Borrar Marca Seleccionada", type="primary", key="btn_borrar_marca"):
                 supabase.table("marcas").delete().eq("id", dicc_marcas_borrar[marca_a_borrar]).execute()
                 st.success("¡Marca eliminada correctamente!")
                 st.rerun()
@@ -71,15 +93,14 @@ with tab_ret:
     retailers = supabase.table("retailers").select("*").order("id").execute().data
     st.dataframe(retailers, use_container_width=True)
     
-    tab_alta_ret, tab_edit_ret = st.tabs(["➕ Nuevo Retailer", "✏️ Editar Retailer"])
-    
-    with tab_alta_ret:
+    col_alta, col_baja = st.columns(2)
+    with col_alta:
         with st.form("form_retailer", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            nombre_ret = col1.text_input("Nombre (ej: Fravega)")
-            tipo_pag = col2.selectbox("Tipo Paginación",["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO", "ENLACE_SIGUIENTE"])
-            sel_caja = col1.text_input("Selector Caja Producto (ej: .product-item)")
-            sel_sig = col2.text_input("Selector Botón Siguiente (ej: a.next)")
+            st.write("➕ **Agregar Nuevo Retailer**")
+            nombre_ret = st.text_input("Nombre (ej: Fravega)")
+            tipo_pag = st.selectbox("Tipo Paginación",["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO", "ENLACE_SIGUIENTE"])
+            sel_caja = st.text_input("Selector Caja Producto (ej: .product-item)")
+            sel_sig = st.text_input("Selector Botón Siguiente (ej: a.next)")
             
             if st.form_submit_button("Guardar Retailer"):
                 if nombre_ret and sel_caja:
@@ -91,112 +112,111 @@ with tab_ret:
                     }).execute()
                     st.success("¡Retailer guardado!")
                     st.rerun()
-
-    with tab_edit_ret:
+                    
+    with col_baja:
+        st.write("🗑️ **Eliminar Retailer**")
         if retailers:
-            dicc_ret_edit = {f"ID: {r['id']} - {r['nombre']}": r for r in retailers}
-            ret_seleccionado = st.selectbox("Seleccione el Retailer a editar:", options=list(dicc_ret_edit.keys()))
-            datos_ret = dicc_ret_edit[ret_seleccionado]
-            
-            with st.form("form_edit_retailer"):
-                st.info(f"Editando la configuración de: **{datos_ret['nombre']}**")
-                col1, col2 = st.columns(2)
-                nuevo_nombre = col1.text_input("Nombre", value=datos_ret['nombre'])
-                opciones_pag =["PARAMETRO_URL", "CLICK_AJAX", "SCROLL_INFINITO", "ENLACE_SIGUIENTE"]
-                idx_pag = opciones_pag.index(datos_ret['tipo_paginacion']) if datos_ret['tipo_paginacion'] in opciones_pag else 0
-                nuevo_tipo_pag = col2.selectbox("Tipo Paginación", opciones_pag, index=idx_pag)
-                nuevo_sel_caja = col1.text_input("Selector Caja Producto", value=datos_ret['selector_caja'])
-                nuevo_sel_sig = col2.text_input("Selector Botón Siguiente", value=datos_ret['selector_siguiente'] if datos_ret['selector_siguiente'] else "")
-                
-                if st.form_submit_button("💾 Guardar Cambios"):
-                    supabase.table("retailers").update({
-                        "nombre": nuevo_nombre,
-                        "selector_caja": nuevo_sel_caja,
-                        "selector_siguiente": nuevo_sel_sig,
-                        "tipo_paginacion": nuevo_tipo_pag
-                    }).eq("id", datos_ret['id']).execute()
-                    st.success("¡Retailer actualizado con éxito!")
-                    st.rerun()
+            dicc_ret_borrar = {f"ID: {r['id']} - {r['nombre']}": r['id'] for r in retailers}
+            ret_a_borrar = st.selectbox("Seleccione el retailer a eliminar:", options=list(dicc_ret_borrar.keys()))
+            if st.button("🚨 Borrar Retailer Seleccionado", type="primary", key="btn_borrar_ret"):
+                supabase.table("retailers").delete().eq("id", dicc_ret_borrar[ret_a_borrar]).execute()
+                st.success("¡Retailer eliminado!")
+                st.rerun()
 
 # ==========================================
-# PESTAÑA 4: URLs DE EXTRACCIÓN (NUEVA CON EDICIÓN)
+# PESTAÑA 4: URLs DE EXTRACCIÓN
 # ==========================================
 with tab_urls:
     st.subheader("Mapa de Navegación del Bot")
-    urls_data = supabase.table("urls_extraccion").select("id, url_base, activo, categorias(id, nombre), retailers(id, nombre)").order("id").execute().data
     
-    # Preparamos los datos para que se vean lindos en la tabla
+    # 1. MOSTRAR LA TABLA CON EL CAMPO max_paginas
+    urls_data = supabase.table("urls_extraccion").select(
+        "id, url_base, activo, max_paginas, categorias(nombre), retailers(nombre)"
+    ).order("id").execute().data
+
     if urls_data:
-        df_urls = [{"ID": u["id"], "Retailer": u["retailers"]["nombre"], "Categoría": u["categorias"]["nombre"], "URL": u["url_base"], "Activo": u["activo"]} for u in urls_data]
+        df_urls = pd.DataFrame(urls_data)
+        df_urls['Retailer'] = df_urls['retailers'].apply(lambda x: x['nombre'] if x else '')
+        df_urls['Categoría'] = df_urls['categorias'].apply(lambda x: x['nombre'] if x else '')
+        df_urls = df_urls[['id', 'Retailer', 'Categoría', 'url_base', 'max_paginas', 'activo']]
         st.dataframe(df_urls, use_container_width=True)
     else:
-        st.info("No hay URLs configuradas.")
+        st.info("No hay URLs configuradas en el sistema.")
 
-    if categorias and retailers:
-        dicc_cat = {c['nombre']: c['id'] for c in categorias}
-        dicc_ret = {r['nombre']: r['id'] for r in retailers}
+    st.write("---")
+    
+    categorias_basicas = supabase.table("categorias").select("*").execute().data
+    retailers_basicos = supabase.table("retailers").select("*").execute().data
+    
+    if categorias_basicas and retailers_basicos:
+        dicc_cat = {c['nombre']: c['id'] for c in categorias_basicas}
+        dicc_ret = {r['nombre']: r['id'] for r in retailers_basicos}
         
-        # Sub-pestañas para URLs
-        tab_alta_url, tab_edit_url, tab_baja_url = st.tabs(["➕ Nueva URL", "✏️ Editar URL", "🗑️ Borrar URL"])
+        # SUB-PESTAÑAS DE ACCIONES
+        sub_nueva, sub_editar, sub_borrar = st.tabs(["➕ Nueva URL", "✏️ Editar URL", "🗑️ Borrar URL"])
         
-        # --- ALTA URL ---
-        with tab_alta_url:
-            with st.form("form_alta_url", clear_on_submit=True):
-                cat_seleccionada = st.selectbox("Seleccione la Categoría", options=list(dicc_cat.keys()))
-                ret_seleccionado = st.selectbox("Seleccione el Retailer", options=list(dicc_ret.keys()))
-                url_ingresada = st.text_input("Pegue la URL base aquí (use {page} si es necesario)")
-                limite_ingresado = st.number_input("Límite de páginas (Deje en 0 para infinito)", min_value=0, step=1, value=0)
-
+        # --- A. NUEVA URL ---
+        with sub_nueva:
+            with st.form("form_urls", clear_on_submit=True):
+                cat_sel = st.selectbox("Seleccione la Categoría", options=list(dicc_cat.keys()))
+                ret_sel = st.selectbox("Seleccione el Retailer", options=list(dicc_ret.keys()))
+                url_ing = st.text_input("Pegue la URL base aquí")
+                
+                # NUEVO CAMPO DE LÍMITE
+                limite_ing = st.number_input("Límite de páginas (Deje en 0 para infinito)", min_value=0, step=1, value=0)
+                activo_ing = st.checkbox("Activar URL inmediatamente", value=True)
+                
                 if st.form_submit_button("Guardar URL"):
-                    if url_ingresada:
-                        valor_limite = int(limite_ingresado) if limite_ingresado > 0 else None
-
+                    if url_ing:
+                        val_lim = int(limite_ing) if limite_ing > 0 else None
                         supabase.table("urls_extraccion").insert({
-                            "categoria_id": dicc_cat[cat_seleccionada],
-                            "retailer_id": dicc_ret[ret_seleccionado],
-                            "url_base": url_ingresada,
-                            "max_paginas": valor_limite,
-                            "activo": True
+                            "categoria_id": dicc_cat[cat_sel],
+                            "retailer_id": dicc_ret[ret_sel],
+                            "url_base": url_ing,
+                            "max_paginas": val_lim,
+                            "activo": activo_ing
                         }).execute()
-                        st.success("¡Ruta de navegación creada con éxito!")
+                        st.success("¡Ruta creada con éxito!")
                         st.rerun()
 
-        # --- EDICIÓN URL ---
-        with tab_edit_url:
-            if urls_data:
-                # Armamos un diccionario fácil de leer para el seleccionador
-                dicc_urls_edit = {f"ID: {u['id']} - {u['retailers']['nombre']} ({u['categorias']['nombre']})": u for u in urls_data}
-                url_seleccionada = st.selectbox("Seleccione la URL a editar:", options=list(dicc_urls_edit.keys()))
-                datos_url = dicc_urls_edit[url_seleccionada]
+        if urls_data:
+            dicc_urls_edit = {f"ID {u['id']} - {u['retailers']['nombre']} ({u['categorias']['nombre']})": u for u in urls_data}
+            
+            # --- B. EDITAR URL ---
+            with sub_editar:
+                url_a_editar = st.selectbox("Seleccione la configuración a editar:", options=list(dicc_urls_edit.keys()))
+                datos_actuales = dicc_urls_edit[url_a_editar]
                 
-                with st.form("form_edit_url"):
-                    st.info(f"Editando URL de **{datos_url['retailers']['nombre']}** para la categoría **{datos_url['categorias']['nombre']}**")
+                with st.form("form_editar_url"):
+                    st.write(f"**Modificando registro ID:** {datos_actuales['id']}")
                     
-                    # Pre-cargamos la URL actual y el switch de Activo/Inactivo
-                    nueva_url = st.text_input("URL base", value=datos_url['url_base'])
-                    nuevo_estado = st.checkbox("¿Activar esta URL para el Bot?", value=datos_url['activo'])
+                    limite_actual_val = int(datos_actuales.get('max_paginas') or 0)
                     
-                    if st.form_submit_button("💾 Guardar Cambios"):
+                    nueva_url = st.text_input("URL base", value=datos_actuales['url_base'])
+                    # EDICIÓN DEL LÍMITE
+                    nuevo_limite = st.number_input("Límite de páginas (0 = infinito)", min_value=0, step=1, value=limite_actual_val)
+                    nuevo_activo = st.checkbox("Activo", value=datos_actuales['activo'])
+                    
+                    if st.form_submit_button("Actualizar Cambios"):
+                        val_lim_upd = int(nuevo_limite) if nuevo_limite > 0 else None
+                        
                         supabase.table("urls_extraccion").update({
                             "url_base": nueva_url,
-                            "activo": nuevo_estado
-                        }).eq("id", datos_url['id']).execute()
-                        st.success("¡URL actualizada con éxito!")
+                            "max_paginas": val_lim_upd,
+                            "activo": nuevo_activo
+                        }).eq("id", datos_actuales['id']).execute()
+                        
+                        st.success("¡Registro actualizado correctamente!")
                         st.rerun()
-            else:
-                st.info("No hay URLs para editar.")
 
-        # --- BAJA URL ---
-        with tab_baja_url:
-            if urls_data:
-                dicc_urls_borrar = {f"ID: {u['id']} - {u['retailers']['nombre']} ({u['categorias']['nombre']})": u['id'] for u in urls_data}
-                url_a_borrar = st.selectbox("Seleccione la URL a eliminar:", options=list(dicc_urls_borrar.keys()))
+            # --- C. BORRAR URL ---
+            with sub_borrar:
+                url_a_borrar = st.selectbox("Seleccione la URL a eliminar:", options=list(dicc_urls_edit.keys()), key="del_url")
+                id_borrar = dicc_urls_edit[url_a_borrar]['id']
                 
-                if st.button("🚨 Borrar URL Seleccionada", type="primary"):
-                    supabase.table("urls_extraccion").delete().eq("id", dicc_urls_borrar[url_a_borrar]).execute()
-                    st.success("¡URL eliminada!")
+                if st.button("🚨 Borrar URL Definitivamente", type="primary"):
+                    supabase.table("urls_extraccion").delete().eq("id", id_borrar).execute()
+                    st.success("¡Ruta eliminada!")
                     st.rerun()
-            else:
-                st.info("No hay URLs para borrar.")
     else:
-        st.warning("⚠️ Primero debes crear al menos una Categoría y un Retailer para poder vincular URLs.")
+        st.warning("⚠️ Primero debes crear al menos una Categoría y un Retailer.")
