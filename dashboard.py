@@ -5,6 +5,9 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, ClientOptions
 
+# ==========================================
+# 1. CONFIGURACIÓN DE LA PÁGINA
+# ==========================================
 st.set_page_config(page_title="Dashboard - Agente de Precios", layout="wide")
 
 load_dotenv(override=True)
@@ -13,6 +16,9 @@ supabase_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_ANON_KEY") or st.secrets.get("SUPABASE_ANON_KEY")
 supabase = create_client(supabase_url, supabase_key, options=opciones)
 
+# ==========================================
+# 2. OBTENER DATOS (Por bloques)
+# ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos():
     todos_los_datos =[]
@@ -20,7 +26,6 @@ def cargar_datos():
     tamano_bloque = 1000
     
     while True:
-        # AHORA PEDIMOS TAMBIÉN CUOTAS Y SEMANA_ANIO
         respuesta = supabase.table("historico_precios").select(
             "id, precio_lista, cuotas, semana_anio, fecha_extraccion, marca_detectada, nombre_modelo_completo, retailers(nombre), categorias(nombre)"
         ).range(inicio, inicio + tamano_bloque - 1).execute()
@@ -38,7 +43,6 @@ def cargar_datos():
     df['Categoría'] = df['categorias'].apply(lambda x: x['nombre'] if x else 'Desconocido')
     df['fecha_extraccion'] = pd.to_datetime(df['fecha_extraccion']).dt.date
     
-    # Rellenamos nulos por si hay registros viejos sin semana o cuotas
     df['semana_anio'] = df['semana_anio'].fillna(0).astype(int)
     df['cuotas'] = df['cuotas'].fillna(0).astype(int)
     
@@ -57,16 +61,14 @@ def cargar_datos():
 df_precios = cargar_datos()
 
 # ==========================================
-# 4. INTERFAZ: BARRA LATERAL (FILTROS)
+# 3. INTERFAZ: BARRA LATERAL (FILTROS)
 # ==========================================
 st.sidebar.header("🔍 Filtros de Búsqueda")
 
 if not df_precios.empty:
-    # NUEVO: BÚSQUEDA POR TEXTO LIBRE
-    busqueda_texto = st.sidebar.text_input("🔎 Buscar en descripción (ej: No Frost, 8kg):")
+    busqueda_texto = st.sidebar.text_input("🔎 Buscar en descripción (ej: No Frost):")
     st.sidebar.markdown("---")
 
-    # NUEVO: SELECTOR DE TIPO DE TIEMPO
     tipo_tiempo = st.sidebar.radio("⏱️ Filtrar tiempo por:",["Rango de Fechas", "Semanas del Año"])
     
     fecha_inicio, fecha_fin = None, None
@@ -84,9 +86,8 @@ if not df_precios.empty:
     
     st.sidebar.markdown("---")
     
-    # Filtros en Cascada (Categoría primero)
     categorias_unicas = sorted(df_precios['Categoría'].unique().tolist())
-    cat_default = ["Heladeras"] if "Heladeras" in categorias_unicas else categorias_unicas
+    cat_default =["Heladeras"] if "Heladeras" in categorias_unicas else categorias_unicas
     filtro_categoria = st.sidebar.multiselect("📁 Categoría", categorias_unicas, default=cat_default)
     
     df_temp_cat = df_precios[df_precios['Categoría'].isin(filtro_categoria)] if filtro_categoria else df_precios
@@ -98,24 +99,21 @@ if not df_precios.empty:
     filtro_marca = st.sidebar.multiselect("🏷️ Marca", marcas_unicas, default=marcas_unicas)
 
     # ==========================================
-    # 5. APLICAR FILTROS
+    # 4. APLICAR FILTROS
     # ==========================================
     df_filtrado = df_precios.copy()
     
-    # Aplicar filtro de tiempo
     if tipo_tiempo == "Rango de Fechas" and fecha_inicio and fecha_fin:
         df_filtrado = df_filtrado[(df_filtrado['Fecha'] >= fecha_inicio) & (df_filtrado['Fecha'] <= fecha_fin)]
     elif tipo_tiempo == "Semanas del Año" and semanas_seleccionadas:
         df_filtrado = df_filtrado[df_filtrado['Semana'].isin(semanas_seleccionadas)]
         
-    # Aplicar filtro de cascada
     df_filtrado = df_filtrado[
         (df_filtrado['Categoría'].isin(filtro_categoria)) &
         (df_filtrado['Retailer'].isin(filtro_retailer)) &
         (df_filtrado['Marca'].isin(filtro_marca))
     ]
     
-    # Aplicar búsqueda de texto libre
     if busqueda_texto:
         df_filtrado = df_filtrado[df_filtrado['Modelo'].str.contains(busqueda_texto, case=False, na=False)]
 
@@ -123,7 +121,7 @@ if not df_precios.empty:
     st.sidebar.write(f"**Registros listados: {len(df_filtrado)}**")
 
     # ==========================================
-    # 6. DASHBOARD
+    # 5. DASHBOARD PRINCIPAL
     # ==========================================
     st.title("📊 Tablero de Control de Precios")
     
@@ -133,7 +131,6 @@ if not df_precios.empty:
         col2.metric("Precio Promedio", f"${int(df_filtrado['Precio'].mean()):,}")
         col3.metric("Marcas Encontradas", df_filtrado['Marca'].nunique())
         
-        # Métrica Nueva: Promedio de cuotas (ignorando los ceros)
         promedio_cuotas = df_filtrado[df_filtrado['Cuotas'] > 0]['Cuotas'].mean()
         col4.metric("Promedio Cuotas", f"{int(promedio_cuotas)} cuotas" if pd.notna(promedio_cuotas) else "N/A")
         
@@ -145,7 +142,21 @@ if not df_precios.empty:
                 st.bar_chart(df_filtrado.groupby('Marca')['Precio'].mean().sort_values(ascending=False))
                 st.write("---")
                 
-        st.subheader("Base de Datos Detallada")
+        # --- NUEVO: BOTÓN DE EXPORTACIÓN A EXCEL (CSV) ---
+        col_titulo, col_boton = st.columns([7, 3])
+        with col_titulo:
+            st.subheader("Base de Datos Detallada")
+        with col_boton:
+            # Convertimos el DataFrame filtrado a CSV con separador de punto y coma y encoding para Excel
+            csv_data = df_filtrado.to_csv(index=False, sep=';').encode('utf-8-sig')
+            st.download_button(
+                label="📥 Descargar a Excel (CSV)",
+                data=csv_data,
+                file_name=f"Reporte_Precios_{datetime.date.today()}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
         st.dataframe(
             df_filtrado.style.format({'Precio': '${:,.0f}'}), 
             use_container_width=True,
