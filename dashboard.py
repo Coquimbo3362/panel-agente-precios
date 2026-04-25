@@ -37,7 +37,7 @@ if not st.session_state['usuario_logeado']:
             
             if st.form_submit_button("Iniciar Sesión", use_container_width=True):
                 # Consultamos a la base de datos
-                res = supabase.table("usuarios").select("*").eq("email", email_input).eq("password", pass_ingresada).execute()
+                res = supabase.table("usuarios").select("*").eq("email", email_ingresado).eq("password", pass_ingresada).execute()
                 
                 if res.data:
                     usuario = res.data[0]
