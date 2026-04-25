@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from supabase import create_client, ClientOptions
 
 # ==========================================
-# 1. CONFIGURACIÓN DE LA PÁGINA
+# 1. CONFIGURACIÓN DE LA PÁGINA Y CONEXIÓN
 # ==========================================
 st.set_page_config(page_title="Dashboard - Agente de Precios", layout="wide")
 
@@ -17,8 +17,55 @@ supabase_key = os.environ.get("SUPABASE_ANON_KEY") or st.secrets.get("SUPABASE_A
 supabase = create_client(supabase_url, supabase_key, options=opciones)
 
 # ==========================================
+# 🔐 SISTEMA DE LOGIN DE SEGURIDAD
+# ==========================================
+# Inicializamos variables de sesión si no existen
+if 'usuario_logeado' not in st.session_state:
+    st.session_state['usuario_logeado'] = False
+    st.session_state['usuario_rol'] = None
+
+# Si no está logeado, mostramos el formulario y detenemos la app
+if not st.session_state['usuario_logeado']:
+    st.markdown("<h2 style='text-align: center;'>🔒 Acceso Restringido</h2>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2: # Centramos el formulario en la columna del medio
+        with st.form("form_login"):
+            st.write("Ingrese sus credenciales para continuar:")
+            email_ingresado = st.text_input("Correo Electrónico")
+            pass_ingresada = st.text_input("Contraseña", type="password")
+            
+            if st.form_submit_button("Iniciar Sesión", use_container_width=True):
+                # Consultamos a la base de datos
+                res = supabase.table("usuarios").select("*").eq("email", email_input).eq("password", pass_ingresada).execute()
+                
+                if res.data:
+                    usuario = res.data[0]
+                    # Validamos que tenga permiso para ver el dashboard
+                    if usuario['rol'] in['dashboard', 'ambos']:
+                        st.session_state['usuario_logeado'] = True
+                        st.session_state['usuario_rol'] = usuario['rol']
+                        st.success("¡Acceso concedido!")
+                        st.rerun() # Recargamos la página para que pase de largo este bloque
+                    else:
+                        st.error("⚠️ Tu usuario no tiene permisos para ver el Dashboard.")
+                else:
+                    st.error("❌ Correo o contraseña incorrectos.")
+                    
+    st.stop() # 🛑 MUY IMPORTANTE: Evita que se cargue el resto de la página si no hay login
+
+# (Opcional) Botón para cerrar sesión en la barra lateral
+if st.sidebar.button("🚪 Cerrar Sesión"):
+    st.session_state['usuario_logeado'] = False
+    st.session_state['usuario_rol'] = None
+    st.rerun()
+
+# ==========================================
 # 2. OBTENER DATOS (Por bloques)
 # ==========================================
+# (A PARTIR DE AQUÍ QUEDA EXACTAMENTE TU CÓDIGO ORIGINAL HACIA ABAJO)
+# ==========================================
+
 @st.cache_data(ttl=600)
 def cargar_datos():
     todos_los_datos =[]
