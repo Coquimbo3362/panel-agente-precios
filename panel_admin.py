@@ -25,7 +25,9 @@ st.title("⚙️ Backoffice - Agente de Precios")
 st.write("Administración de datos maestros para el Bot de Scraping.")
 
 # 3. PESTAÑAS (Tabs)
-tab_cat, tab_marcas, tab_ret, tab_urls = st.tabs(["📁 Categorías", "🏷️ Marcas", "🏢 Retailers", "🔗 URLs de Navegación"])
+tab_cat, tab_marcas, tab_ret, tab_urls, tab_mapeo, tab_params = st.tabs([
+    "📁 Categorías", "🏷️ Marcas", "🏢 Retailers", "🔗 URLs de Navegación", "📊 Mapeo Competencia", "⚙️ Parámetros"
+])
 
 # ==========================================
 # PESTAÑA 1: CATEGORÍAS
@@ -248,3 +250,67 @@ with tab_urls:
                     st.rerun()
     else:
         st.warning("⚠️ Primero debes crear al menos una Categoría y un Retailer.")
+# ==========================================
+# PESTAÑA 5: MAPEO DE COMPETENCIA (FASE 2)
+# ==========================================
+with tab_mapeo:
+    st.subheader("Carga Masiva de Mapeo de Competencia")
+    st.write("Sube un archivo Excel (.xlsx) para actualizar el mapeo entre los modelos de la marca principal y sus competidores.")
+    st.info("💡 El Excel debe tener exactamente estas 4 columnas en la primera fila: `marca_principal`, `modelo_principal`, `marca_competencia`, `modelo_competencia`")
+    
+    archivo_excel = st.file_uploader("Cargar archivo Excel", type=["xlsx"])
+    
+    if archivo_excel:
+        try:
+            df_mapeo = pd.read_excel(archivo_excel)
+            st.write("🔍 Vista previa de los datos a cargar:")
+            st.dataframe(df_mapeo.head(), use_container_width=True)
+            
+            columnas_requeridas =['marca_principal', 'modelo_principal', 'marca_competencia', 'modelo_competencia']
+            
+            if all(col in df_mapeo.columns for col in columnas_requeridas):
+                if st.button("🚀 Reemplazar Mapeo en Base de Datos", type="primary"):
+                    # 1. Borramos el mapeo anterior para evitar duplicados y mantener la BD limpia
+                    supabase.table("mapeo_competencia").delete().neq("id", 0).execute() 
+                    
+                    # 2. Insertamos los nuevos datos
+                    datos_insertar = df_mapeo[columnas_requeridas].to_dict(orient="records")
+                    supabase.table("mapeo_competencia").insert(datos_insertar).execute()
+                    
+                    st.success(f"¡Se han cargado {len(datos_insertar)} registros de mapeo exitosamente!")
+                    st.rerun()
+            else:
+                st.error(f"⚠️ Error: El Excel debe contener exactamente estas columnas: {', '.join(columnas_requeridas)}")
+        except Exception as e:
+            st.error(f"Error al procesar el archivo: {e}")
+
+# ==========================================
+# PESTAÑA 6: PARÁMETROS DE NEGOCIO (FASE 2)
+# ==========================================
+with tab_params:
+    st.subheader("Parámetros Globales del Sistema")
+    st.write("Ajusta las variables que usará el Bot de Alertas y el Dashboard.")
+    
+    # Obtener el registro actual
+    res_params = supabase.table("parametros_negocio").select("*").execute()
+    params = res_params.data[0] if res_params.data else None
+    
+    if params:
+        with st.form("form_parametros"):
+            tasa = st.number_input("Tasa de Interés Implícita (%) - Para calcular netos de cuotas", 
+                                   value=float(params['tasa_interes_implicita']), step=0.1)
+            tol_roja = st.number_input("Tolerancia Alerta Roja (% por debajo del mercado)", 
+                                       value=float(params['tolerancia_roja']), step=0.1)
+            tol_amarilla = st.number_input("Tolerancia Alerta Amarilla (% por debajo del mercado)", 
+                                           value=float(params['tolerancia_amarilla']), step=0.1)
+            
+            if st.form_submit_button("💾 Guardar Parámetros"):
+                supabase.table("parametros_negocio").update({
+                    "tasa_interes_implicita": tasa,
+                    "tolerancia_roja": tol_roja,
+                    "tolerancia_amarilla": tol_amarilla
+                }).eq("id", params['id']).execute()
+                st.success("¡Parámetros actualizados correctamente!")
+                st.rerun()
+    else:
+        st.warning("⚠️ No hay parámetros configurados en la BD. Ejecuta el SQL de inicialización.")        
